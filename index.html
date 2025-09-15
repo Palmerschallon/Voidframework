@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>WebGPU Void Mobile</title>
+    <title>Canvas 2D Void Mobile</title>
     <style>
         * { 
             box-sizing: border-box; 
@@ -21,14 +21,14 @@
             padding: 0; 
             width: 100%; 
             height: 100vh; 
-            height: 100dvh; /* Dynamic viewport height for mobile */
+            height: 100dvh;
             display: flex; 
             justify-content: center; 
             align-items: center; 
             background-color: #000; 
             overflow: hidden;
             position: fixed;
-            touch-action: none; /* Prevent scrolling/zooming */
+            touch-action: none;
         }
         
         canvas { 
@@ -37,26 +37,7 @@
             height: 100dvh;
             display: block;
             touch-action: none;
-        }
-        
-        #error-container { 
-            color: white; 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            text-align: center; 
-            display: none;
-            padding: 20px;
-            max-width: 90vw;
-            line-height: 1.5;
-        }
-        
-        #error-container h1 {
-            font-size: clamp(1.2rem, 5vw, 2rem);
-            margin-bottom: 1rem;
-        }
-        
-        #error-container p {
-            font-size: clamp(0.9rem, 3vw, 1rem);
-            opacity: 0.8;
+            background: radial-gradient(ellipse at center, #001122 0%, #000000 100%);
         }
         
         #loading {
@@ -71,34 +52,259 @@
             z-index: 10;
         }
         
-        /* Performance indicator for mobile debugging */
         #fps-counter {
             position: absolute;
             top: 10px;
             right: 10px;
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.3);
             font-family: monospace;
             font-size: 12px;
             z-index: 100;
-            display: none; /* Hidden by default, can be enabled for debugging */
+            display: none;
+        }
+        
+        #touch-indicator {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255, 255, 255, 0.4);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 12px;
+            text-align: center;
+            z-index: 100;
+            animation: fadeInOut 3s ease-in-out infinite;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 0.6; }
         }
     </style>
 </head>
 <body>
-    <canvas id="gpuCanvas"></canvas>
-    <div id="loading">Loading...</div>
+    <canvas id="canvas"></canvas>
+    <div id="loading">Initializing particles...</div>
     <div id="fps-counter">FPS: --</div>
-    <div id="error-container">
-        <h1>WebGPU Not Available</h1>
-        <p>This visualization requires WebGPU support. Please try:</p>
-        <p>• Chrome/Edge: Enable "Unsafe WebGPU" in chrome://flags</p>
-        <p>• Firefox: Enable "dom.webgpu.enabled" in about:config</p>
-        <p>• Safari: WebGPU support varies by iOS version</p>
-    </div>
+    <div id="touch-indicator">Touch to interact</div>
 
-    <script type="module">
+    <script>
         // ===================================================================================
-        //  MOBILE PERFORMANCE MONITORING
+        //  MOBILE DEVICE DETECTION & OPTIMIZATION
+        // ===================================================================================
+        
+        function getMobileOptimizations() {
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isLowEnd = navigator.hardwareConcurrency <= 4 || navigator.deviceMemory <= 4;
+            const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+            
+            return {
+                isMobile,
+                isLowEnd,
+                pixelRatio,
+                particleCount: isLowEnd ? 1000 : isMobile ? 2000 : 5000,
+                trailLength: isMobile ? 0.95 : 0.98, // Shorter trails on mobile for performance
+                useOptimizedRendering: isMobile
+            };
+        }
+
+        // ===================================================================================
+        //  PARTICLE SYSTEM VOID: Cast your particle logic here.
+        // ===================================================================================
+        
+        class ParticleSystem {
+            constructor(canvas, options = {}) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.options = { ...getMobileOptimizations(), ...options };
+                
+                this.particles = [];
+                this.time = 0;
+                this.touchX = 0;
+                this.touchY = 0;
+                this.isTouch = false;
+                
+                this.initParticles();
+                this.setupEventListeners();
+            }
+            
+            initParticles() {
+                this.particles = [];
+                for (let i = 0; i < this.options.particleCount; i++) {
+                    this.particles.push({
+                        id: i,
+                        x: Math.random() * this.canvas.width,
+                        y: Math.random() * this.canvas.height,
+                        vx: 0,
+                        vy: 0,
+                        life: Math.random(),
+                        size: Math.random() * 2 + 0.5,
+                        hue: Math.random() * 60 + 200, // Blue-cyan range
+                        alpha: Math.random() * 0.8 + 0.2
+                    });
+                }
+            }
+            
+            setupEventListeners() {
+                // Touch events for mobile interaction
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
+                    this.touchY = (touch.clientY - rect.top) * (this.canvas.height / rect.height);
+                    this.isTouch = true;
+                    document.getElementById('touch-indicator').style.display = 'none';
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.touchX = (touch.clientX - rect.left) * (this.canvas.width / rect.width);
+                    this.touchY = (touch.clientY - rect.top) * (this.canvas.height / rect.height);
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    this.isTouch = false;
+                });
+                
+                // Mouse events for desktop
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.touchX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+                    this.touchY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+                    this.isTouch = true;
+                });
+                
+                this.canvas.addEventListener('mouseleave', () => {
+                    this.isTouch = false;
+                });
+            }
+            
+            updateParticle(particle) {
+                // The parable kernel mathematics adapted for Canvas 2D
+                const i = particle.id;
+                const y = i / 470.0;
+                const k = (4.0 + Math.sin(y * 7.0 - this.time) * 3.0) * Math.cos(i / 78.0);
+                const e = y / 8.0 - 13.0;
+                const d = Math.sqrt(k * k + e * e);
+                
+                const q = 2.0 * Math.sin(k * 2.0) + 0.3 / Math.max(Math.abs(k), 0.001) + 
+                         y / 8.0 * k * (2.0 + Math.sin(y - d * 3.0 + this.time * 2.0));
+                
+                const m = i & 7;
+                const c = d - this.time + m * 0.4;
+                
+                const baseX = q * Math.cos(c) + 40.0 * Math.cos(c + m * 0.7) + 200.0;
+                const baseY = q * Math.sin(c) + d * 46.0 - 300.0;
+                
+                // Normalize to canvas coordinates
+                const aspect = this.canvas.width / this.canvas.height;
+                particle.x = ((baseX / this.canvas.width) * 2.0 - 1.0) * aspect * this.canvas.width * 0.5 + this.canvas.width * 0.5;
+                particle.y = (baseY / this.canvas.height) * 2.0 * this.canvas.height * 0.5 + this.canvas.height * 0.5;
+                
+                // Touch interaction
+                if (this.isTouch) {
+                    const dx = this.touchX - particle.x;
+                    const dy = this.touchY - particle.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const force = Math.max(0, 100 - dist) * 0.001;
+                    
+                    particle.x += dx * force;
+                    particle.y += dy * force;
+                }
+                
+                // Update particle properties
+                particle.life += 0.01;
+                particle.alpha = 0.5 + 0.3 * Math.sin(particle.life * 2);
+                particle.size = 0.5 + 1.5 * (0.5 + 0.5 * Math.sin(particle.life * 3));
+            }
+            
+            render() {
+                // Trail effect for smooth motion
+                this.ctx.fillStyle = `rgba(0, 1, 8, ${1 - this.options.trailLength})`;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Render particles
+                for (const particle of this.particles) {
+                    this.updateParticle(particle);
+                    
+                    // Skip particles outside canvas
+                    if (particle.x < -10 || particle.x > this.canvas.width + 10 || 
+                        particle.y < -10 || particle.y > this.canvas.height + 10) {
+                        continue;
+                    }
+                    
+                    this.ctx.save();
+                    this.ctx.globalAlpha = particle.alpha;
+                    
+                    // Create gradient for each particle
+                    const gradient = this.ctx.createRadialGradient(
+                        particle.x, particle.y, 0,
+                        particle.x, particle.y, particle.size * 3
+                    );
+                    gradient.addColorStop(0, `hsl(${particle.hue}, 80%, 80%)`);
+                    gradient.addColorStop(0.5, `hsl(${particle.hue}, 60%, 50%)`);
+                    gradient.addColorStop(1, `hsl(${particle.hue}, 40%, 20%)`);
+                    
+                    this.ctx.fillStyle = gradient;
+                    this.ctx.beginPath();
+                    this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    
+                    this.ctx.restore();
+                }
+                
+                this.time += 0.016; // ~60fps time step
+            }
+            
+            resize() {
+                const rect = this.canvas.getBoundingClientRect();
+                this.canvas.width = rect.width * this.options.pixelRatio;
+                this.canvas.height = rect.height * this.options.pixelRatio;
+                this.ctx.scale(this.options.pixelRatio, this.options.pixelRatio);
+            }
+        }
+
+        // ===================================================================================
+        //  SETUP VOID: Cast your initialization logic here.
+        // ===================================================================================
+        
+        const RENDER_OPTIONS = {
+            // Particle count automatically adjusted based on device
+            // Trail length optimized for mobile performance
+            // Touch interaction enabled
+            backgroundColor: '#000108',
+            showFPS: false // Set to true for debugging
+        };
+
+        function setup() {
+            const canvas = document.getElementById('canvas');
+            const loading = document.getElementById('loading');
+            
+            // Initialize particle system
+            const particleSystem = new ParticleSystem(canvas, RENDER_OPTIONS);
+            
+            // Handle resize
+            function handleResize() {
+                particleSystem.resize();
+            }
+            
+            handleResize();
+            window.addEventListener('resize', handleResize);
+            window.addEventListener('orientationchange', () => {
+                setTimeout(handleResize, 100);
+            });
+            
+            loading.style.display = 'none';
+            
+            return particleSystem;
+        }
+
+        // ===================================================================================
+        //  MOBILE-OPTIMIZED CORE FRAMEWORK
         // ===================================================================================
         
         let frameCount = 0;
@@ -111,318 +317,51 @@
             if (currentTime - lastTime >= 1000) {
                 fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
                 const fpsCounter = document.getElementById('fps-counter');
-                if (fpsCounter.style.display !== 'none') {
+                if (RENDER_OPTIONS.showFPS) {
+                    fpsCounter.style.display = 'block';
                     fpsCounter.textContent = `FPS: ${fps}`;
                 }
                 frameCount = 0;
                 lastTime = currentTime;
             }
         }
-
-        // ===================================================================================
-        //  MOBILE DEVICE DETECTION & OPTIMIZATION
-        // ===================================================================================
         
-        function getMobileOptimizations() {
-            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-            const isLowEnd = navigator.hardwareConcurrency <= 4 || navigator.deviceMemory <= 4;
-            const pixelRatio = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x for performance
+        function main() {
+            const particleSystem = setup();
+            let isVisible = true;
             
-            return {
-                isMobile,
-                isLowEnd,
-                pixelRatio,
-                // Adaptive particle counts based on device capability
-                particleCount: isLowEnd ? 50000 : isMobile ? 100000 : 200000,
-                workgroupSize: 64, // Smaller workgroups often better on mobile GPUs
-                // Reduce precision on mobile for better performance
-                useHalfPrecision: isMobile
-            };
-        }
-
-        // ===================================================================================
-        //  SHADER VOID: Cast your WGSL code here.
-        // ===================================================================================
-
-        const COMPUTE_SHADER_CODE = `
-            // Mobile-optimized parable kernel
-            struct Params { t: f32, n: u32, width: f32, height: f32 };
-            @group(0) @binding(0) var<uniform> params: Params;
-            @group(0) @binding(1) var<storage, read_write> pos: array<vec2<f32>>;
-            @group(0) @binding(2) var<storage, read> idx: array<u32>;
-
-            @compute @workgroup_size(64) // Optimized for mobile GPUs
-            fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-                let j = gid.x;
-                if (j >= params.n) { return; }
-                let i = f32(idx[j]);
-                
-                // Simplified math for mobile performance while maintaining visual appeal
-                let y = i / 470.0;
-                let k = (4.0 + sin(y * 7.0 - params.t) * 3.0) * cos(i / 78.0);
-                let e = y / 8.0 - 13.0;
-                let d = sqrt(k * k + e * e);
-                
-                // Reduced complexity in the main calculation
-                let q = 2.0 * sin(k * 2.0) + 0.3 / max(abs(k), 0.001) + 
-                        y / 8.0 * k * (2.0 + sin(y - d * 3.0 + params.t * 2.0));
-                
-                let m = f32(bitcast<u32>(i) & 7u);
-                let c = d - params.t + m * 0.4;
-                
-                // Mobile-friendly coordinate calculation
-                let x = q * cos(c) + 40.0 * cos(c + m * 0.7) + 200.0;
-                let y2 = q * sin(c) + d * 46.0 - 300.0;
-                
-                // Normalize to screen coordinates with mobile aspect ratio consideration
-                let aspect = params.width / params.height;
-                let norm_x = ((x / params.width) * 2.0 - 1.0) * aspect;
-                let norm_y = (y2 / params.height) * 2.0 - 1.0;
-                
-                pos[j] = vec2<f32>(norm_x, norm_y);
-            }
-        `;
-
-        const VERTEX_SHADER_CODE = `
-            @group(0) @binding(1) var<storage, read> pos: array<vec2<f32>>;
-            
-            struct VertexOutput {
-                @builtin(position) position: vec4<f32>,
-                @location(0) @interpolate(flat) particleId: f32,
-            };
-            
-            @vertex fn main(@builtin(vertex_index) vi: u32) -> VertexOutput {
-                var output: VertexOutput;
-                output.position = vec4<f32>(pos[vi], 0.0, 1.0);
-                output.particleId = f32(vi);
-                return output;
-            }
-        `;
-
-        const FRAGMENT_SHADER_CODE = `
-            struct FragmentInput {
-                @location(0) @interpolate(flat) particleId: f32,
-            };
-            
-            @fragment fn main(input: FragmentInput) -> @location(0) vec4<f32> {
-                // Mobile-friendly particle rendering with subtle color variation
-                let id = input.particleId;
-                let hue = fract(id * 0.001) * 0.3 + 0.7; // Subtle blue-white variation
-                return vec4<f32>(hue, hue * 0.9 + 0.1, 1.0, 0.8);
-            }
-        `;
-
-        // ===================================================================================
-        //  SETUP VOID: Cast your initial setup logic here.
-        // ===================================================================================
-
-        const mobileOpts = getMobileOptimizations();
-        
-        const RENDER_PARAMS = {
-            numParticles: mobileOpts.particleCount,
-            workgroupSize: mobileOpts.workgroupSize,
-            clearColor: { r: 0.0, g: 0.0, b: 0.02, a: 1.0 },
-            topology: 'point-list',
-            pixelRatio: mobileOpts.pixelRatio,
-            isMobile: mobileOpts.isMobile
-        };
-
-        function setup(device, RENDER_PARAMS) {
-            const idxData = new Uint32Array(RENDER_PARAMS.numParticles);
-            for (let i = 0; i < RENDER_PARAMS.numParticles; ++i) { 
-                idxData[i] = i; 
-            }
-            
-            const idxBuffer = device.createBuffer({
-                label: 'Index Buffer',
-                size: idxData.byteLength,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                mappedAtCreation: true,
+            // Battery optimization - pause when not visible
+            document.addEventListener('visibilitychange', () => {
+                isVisible = !document.hidden;
             });
-            new Uint32Array(idxBuffer.getMappedRange()).set(idxData);
-            idxBuffer.unmap();
-
-            return { customBuffers: { idxBuffer } };
-        }
-
-        // ===================================================================================
-        //  MOBILE-OPTIMIZED CORE FRAMEWORK
-        // ===================================================================================
-
-        async function main() {
-            const canvas = document.getElementById('gpuCanvas');
-            const errorContainer = document.getElementById('error-container');
-            const loading = document.getElementById('loading');
-
-            // Enhanced WebGPU detection for mobile
-            if (!navigator.gpu) {
-                loading.style.display = 'none';
-                canvas.style.display = 'none';
-                errorContainer.style.display = 'block';
-                return;
-            }
-
-            try {
-                const adapter = await navigator.gpu.requestAdapter({
-                    powerPreference: RENDER_PARAMS.isMobile ? 'low-power' : 'high-performance'
-                });
-                
-                if (!adapter) {
-                    throw new Error('No WebGPU adapter found');
-                }
-
-                const device = await adapter.requestDevice();
-                const context = canvas.getContext('webgpu');
-                const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-
-                // Mobile-optimized canvas setup
-                function resizeCanvas() {
-                    const rect = canvas.getBoundingClientRect();
-                    canvas.width = rect.width * RENDER_PARAMS.pixelRatio;
-                    canvas.height = rect.height * RENDER_PARAMS.pixelRatio;
-                }
-                
-                resizeCanvas();
-                window.addEventListener('resize', resizeCanvas);
-                window.addEventListener('orientationchange', () => {
-                    setTimeout(resizeCanvas, 100); // Delay for orientation change
-                });
-
-                context.configure({
-                    device,
-                    format: presentationFormat,
-                    alphaMode: 'premultiplied',
-                });
-
-                const computeShaderModule = device.createShaderModule({ 
-                    label: 'Compute Shader', 
-                    code: COMPUTE_SHADER_CODE 
-                });
-                const vertexShaderModule = device.createShaderModule({ 
-                    label: 'Vertex Shader', 
-                    code: VERTEX_SHADER_CODE 
-                });
-                const fragmentShaderModule = device.createShaderModule({ 
-                    label: 'Fragment Shader', 
-                    code: FRAGMENT_SHADER_CODE 
-                });
-
-                const computePipeline = device.createComputePipeline({ 
-                    label: 'Compute Pipeline', 
-                    layout: 'auto', 
-                    compute: { module: computeShaderModule, entryPoint: 'main' } 
-                });
-                
-                const renderPipeline = device.createRenderPipeline({ 
-                    label: 'Render Pipeline', 
-                    layout: 'auto', 
-                    vertex: { module: vertexShaderModule, entryPoint: 'main' }, 
-                    fragment: { 
-                        module: fragmentShaderModule, 
-                        entryPoint: 'main', 
-                        targets: [{ format: presentationFormat }] 
-                    }, 
-                    primitive: { topology: RENDER_PARAMS.topology } 
-                });
-
-                const paramsData = new Float32Array(4);
-                paramsData[1] = RENDER_PARAMS.numParticles;
-                const paramsBuffer = device.createBuffer({ 
-                    label: 'Params Buffer', 
-                    size: paramsData.byteLength, 
-                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST 
-                });
-                
-                const posBuffer = device.createBuffer({ 
-                    label: 'Position Buffer', 
-                    size: RENDER_PARAMS.numParticles * 2 * 4, 
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX 
-                });
-
-                const { customBuffers } = setup(device, RENDER_PARAMS);
-
-                const computeBindGroup = device.createBindGroup({ 
-                    label: 'Compute Bind Group', 
-                    layout: computePipeline.getBindGroupLayout(0), 
-                    entries: [
-                        { binding: 0, resource: { buffer: paramsBuffer } },
-                        { binding: 1, resource: { buffer: posBuffer } },
-                        { binding: 2, resource: { buffer: customBuffers.idxBuffer } },
-                    ]
-                });
-                
-                const renderBindGroup = device.createBindGroup({ 
-                    label: 'Render Bind Group', 
-                    layout: renderPipeline.getBindGroupLayout(0), 
-                    entries: [
-                        { binding: 1, resource: { buffer: posBuffer } },
-                    ]
-                });
-
-                loading.style.display = 'none';
-                let startTime = performance.now();
-                let isVisible = true;
-                
-                // Mobile battery optimization - pause when not visible
-                document.addEventListener('visibilitychange', () => {
-                    isVisible = !document.hidden;
-                });
-
-                function frame() {
-                    if (!isVisible) {
-                        requestAnimationFrame(frame);
-                        return;
-                    }
-                    
+            
+            function animate() {
+                if (isVisible) {
                     updateFPS();
-                    
-                    paramsData[0] = (performance.now() - startTime) / 2000.0;
-                    paramsData[2] = canvas.width;
-                    paramsData[3] = canvas.height;
-                    device.queue.writeBuffer(paramsBuffer, 0, paramsData);
-
-                    const commandEncoder = device.createCommandEncoder();
-                    
-                    const computePass = commandEncoder.beginComputePass();
-                    computePass.setPipeline(computePipeline);
-                    computePass.setBindGroup(0, computeBindGroup);
-                    computePass.dispatchWorkgroups(Math.ceil(RENDER_PARAMS.numParticles / RENDER_PARAMS.workgroupSize));
-                    computePass.end();
-
-                    const renderPass = commandEncoder.beginRenderPass({ 
-                        colorAttachments: [{ 
-                            view: context.getCurrentTexture().createView(), 
-                            loadOp: 'clear', 
-                            clearValue: RENDER_PARAMS.clearColor, 
-                            storeOp: 'store' 
-                        }] 
-                    });
-                    renderPass.setPipeline(renderPipeline);
-                    renderPass.setBindGroup(0, renderBindGroup);
-                    renderPass.draw(RENDER_PARAMS.numParticles);
-                    renderPass.end();
-
-                    device.queue.submit([commandEncoder.finish()]);
-                    requestAnimationFrame(frame);
+                    particleSystem.render();
                 }
-                
-                requestAnimationFrame(frame);
-
-            } catch (err) {
-                console.error('WebGPU initialization failed:', err);
-                loading.style.display = 'none';
-                canvas.style.display = 'none';
-                errorContainer.style.display = 'block';
-                errorContainer.innerHTML += `<hr><p style="text-align: left; max-width: 80vw; margin: auto; font-size: 0.8rem; opacity: 0.6;">${err.message}</p>`;
+                requestAnimationFrame(animate);
             }
+            
+            animate();
         }
-
+        
         // Initialize when DOM is ready
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', main);
         } else {
             main();
         }
+        
+        // Prevent zoom on double tap
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', function (event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) {
+                event.preventDefault();
+            }
+            lastTouchEnd = now;
+        }, false);
     </script>
 </body>
 </html>
